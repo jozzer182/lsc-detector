@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:hand_landmarker/hand_landmarker.dart';
 import 'services/camera_permission_service.dart';
 import 'services/inference_service.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'widgets/landmark_painter.dart';
 import 'widgets/result_panel.dart';
  
@@ -48,6 +49,12 @@ class _DetectorScreenState extends State<DetectorScreen>
   InferenceResult? _lastResult;
   final List<double> _confidenceHistory = [];
   static const int _maxHistory = 10;
+  
+  // ── TTS ────────────────────────────────────────────────────────────────
+  final FlutterTts _flutterTts = FlutterTts();
+  String? _currentTtsLetter;
+  DateTime? _letterStartTime;
+  String? _lastSpokenLetter;
  
   // ── Lifecycle ──────────────────────────────────────────────────────────
  
@@ -59,6 +66,10 @@ class _DetectorScreenState extends State<DetectorScreen>
   }
 
   Future<void> _initializeAll() async {
+    // Configure TTS
+    await _flutterTts.setLanguage("es-ES");
+    await _flutterTts.setSpeechRate(0.5);
+
     // Load TFLite model first — fail fast before opening camera
     try {
       await _inferenceService.initialize();
@@ -72,6 +83,7 @@ class _DetectorScreenState extends State<DetectorScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _flutterTts.stop();
     _disposeCamera();
     _inferenceService.dispose();
     super.dispose();
@@ -234,8 +246,26 @@ class _DetectorScreenState extends State<DetectorScreen>
             if (_confidenceHistory.length > _maxHistory) {
               _confidenceHistory.removeAt(0);
             }
+
+            // ── TTS Logic ────────────────────────────────────────────────
+            if (result.label == _currentTtsLetter) {
+              if (_letterStartTime != null &&
+                  DateTime.now().difference(_letterStartTime!).inMilliseconds > 1000) {
+                if (_lastSpokenLetter != result.label) {
+                  _flutterTts.speak(result.label);
+                  _lastSpokenLetter = result.label;
+                }
+              }
+            } else {
+              _currentTtsLetter = result.label;
+              _letterStartTime = DateTime.now();
+              _lastSpokenLetter = null; // Reset to allow speaking the new letter after 1s
+            }
           } else if (hands.isEmpty) {
             _confidenceHistory.clear();
+            _currentTtsLetter = null;
+            _letterStartTime = null;
+            _lastSpokenLetter = null;
           }
           // ── END NEW ────────────────────────────────────────────────────
         });
@@ -258,6 +288,9 @@ class _DetectorScreenState extends State<DetectorScreen>
       _detectedHands = [];
       _lastResult = null;
       _confidenceHistory.clear();
+      _currentTtsLetter = null;
+      _letterStartTime = null;
+      _lastSpokenLetter = null;
     });
     await _startCamera();
   }
