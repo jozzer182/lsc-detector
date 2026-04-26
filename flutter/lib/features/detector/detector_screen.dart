@@ -1,7 +1,7 @@
 // lib/features/detector/detector_screen.dart
 // Main screen: live camera preview + real-time hand landmark detection.
 // TFLite inference is NOT included here — it is added in Prompt 3.
- 
+
 import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +11,7 @@ import 'services/inference_service.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'widgets/landmark_painter.dart';
 import 'widgets/result_panel.dart';
- 
+
 enum _ScreenState {
   loading,
   permissionDenied,
@@ -19,45 +19,44 @@ enum _ScreenState {
   ready,
   error,
 }
- 
+
 class DetectorScreen extends StatefulWidget {
   const DetectorScreen({super.key});
- 
+
   @override
   State<DetectorScreen> createState() => _DetectorScreenState();
 }
- 
+
 class _DetectorScreenState extends State<DetectorScreen>
     with WidgetsBindingObserver {
- 
   // ── Screen state ───────────────────────────────────────────────────────
   _ScreenState _screenState = _ScreenState.loading;
   String _errorMessage = '';
- 
+
   // ── Camera ─────────────────────────────────────────────────────────────
   CameraController? _cameraController;
   List<CameraDescription> _cameras = [];
   int _selectedCameraIndex = 0;
- 
+
   // ── Hand landmarker ────────────────────────────────────────────────────
   HandLandmarkerPlugin? _handLandmarker;
   List<Hand> _detectedHands = [];
   bool _isProcessingFrame = false;
- 
+
   // ── Inference ──────────────────────────────────────────────────────────
   final InferenceService _inferenceService = InferenceService();
   InferenceResult? _lastResult;
   final List<double> _confidenceHistory = [];
   static const int _maxHistory = 10;
-  
+
   // ── TTS ────────────────────────────────────────────────────────────────
   final FlutterTts _flutterTts = FlutterTts();
   String? _currentTtsLetter;
   DateTime? _letterStartTime;
   String? _lastSpokenLetter;
- 
+
   // ── Lifecycle ──────────────────────────────────────────────────────────
- 
+
   @override
   void initState() {
     super.initState();
@@ -79,7 +78,7 @@ class _DetectorScreenState extends State<DetectorScreen>
     }
     await _initialize();
   }
- 
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -88,26 +87,26 @@ class _DetectorScreenState extends State<DetectorScreen>
     _inferenceService.dispose();
     super.dispose();
   }
- 
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // Pause camera when app goes to background; resume when it returns.
     final controller = _cameraController;
     if (controller == null || !controller.value.isInitialized) return;
- 
+
     if (state == AppLifecycleState.inactive) {
       _disposeCamera();
     } else if (state == AppLifecycleState.resumed) {
       _startCamera();
     }
   }
- 
+
   // ── Initialization ─────────────────────────────────────────────────────
- 
+
   Future<void> _initialize() async {
     // Step 1: Request runtime camera permission
     final permStatus = await CameraPermissionService.request();
- 
+
     if (permStatus == CameraPermissionStatus.permanentlyDenied) {
       _setScreenState(_ScreenState.permissionPermanentlyDenied);
       return;
@@ -116,7 +115,7 @@ class _DetectorScreenState extends State<DetectorScreen>
       _setScreenState(_ScreenState.permissionDenied);
       return;
     }
- 
+
     // Step 2: Get available cameras
     try {
       _cameras = await availableCameras();
@@ -124,41 +123,41 @@ class _DetectorScreenState extends State<DetectorScreen>
       _setError('Error al obtener cámaras: $e');
       return;
     }
- 
+
     if (_cameras.isEmpty) {
       _setError('No se encontraron cámaras en este dispositivo.');
       return;
     }
- 
+
     // Prefer front camera — more natural for sign language
     _selectedCameraIndex = _cameras.indexWhere(
       (c) => c.lensDirection == CameraLensDirection.front,
     );
     if (_selectedCameraIndex == -1) _selectedCameraIndex = 0;
- 
+
     // Step 3: Start camera stream + hand landmarker
     await _startCamera();
   }
- 
+
   Future<void> _startCamera() async {
     await _disposeCamera();
- 
+
     final camera = _cameras[_selectedCameraIndex];
- 
+
     final controller = CameraController(
       camera,
-      ResolutionPreset.medium, // ~720p — good balance for landmark accuracy
+      ResolutionPreset.veryHigh, // 1080p — Alta definición para mejor claridad visual
       enableAudio: false,
       imageFormatGroup: ImageFormatGroup.yuv420, // Required by hand_landmarker
     );
- 
+
     try {
       await controller.initialize();
     } catch (e) {
       _setError('Error al inicializar la cámara: $e');
       return;
     }
- 
+
     // Initialize hand landmarker — try GPU first, fall back to CPU
     try {
       _handLandmarker = HandLandmarkerPlugin.create(
@@ -178,7 +177,7 @@ class _DetectorScreenState extends State<DetectorScreen>
         return;
       }
     }
- 
+
     _cameraController = controller;
     await controller.startImageStream(_onCameraFrame);
 
@@ -190,13 +189,13 @@ class _DetectorScreenState extends State<DetectorScreen>
 
     if (mounted) setState(() => _screenState = _ScreenState.ready);
   }
- 
+
   Future<void> _disposeCamera() async {
     final controller = _cameraController;
     _cameraController = null;
     _handLandmarker = null;
     _isProcessingFrame = false;
- 
+
     if (controller != null) {
       if (controller.value.isStreamingImages) {
         await controller.stopImageStream();
@@ -204,16 +203,16 @@ class _DetectorScreenState extends State<DetectorScreen>
       await controller.dispose();
     }
   }
- 
+
   // ── Frame processing ───────────────────────────────────────────────────
- 
+
   void _onCameraFrame(CameraImage image) {
     // Guard: drop frames that arrive while we are still processing the last one
     if (_isProcessingFrame) return;
     final plugin = _handLandmarker;
     final controller = _cameraController;
     if (plugin == null || controller == null) return;
- 
+
     _isProcessingFrame = true;
     try {
       final hands = plugin.detect(
@@ -225,13 +224,16 @@ class _DetectorScreenState extends State<DetectorScreen>
       InferenceResult? result;
       if (hands.isNotEmpty) {
         final lms = hands.first.landmarks;
-        final points = lms
-            .map((lm) => (
-                  x: _isFrontCamera ? lm.x : 1.0 - lm.x,
-                  y: lm.y,
-                  z: lm.z,
-                ))
-            .toList();
+        final points =
+            lms
+                .map(
+                  (lm) => (
+                    x: _isFrontCamera ? lm.x : 1.0 - lm.x,
+                    y: lm.y,
+                    z: lm.z,
+                  ),
+                )
+                .toList();
         result = _inferenceService.predict(points);
       }
       // ── END NEW ────────────────────────────────────────────────────────
@@ -250,7 +252,8 @@ class _DetectorScreenState extends State<DetectorScreen>
             // ── TTS Logic ────────────────────────────────────────────────
             if (result.label == _currentTtsLetter) {
               if (_letterStartTime != null &&
-                  DateTime.now().difference(_letterStartTime!).inMilliseconds > 1000) {
+                  DateTime.now().difference(_letterStartTime!).inMilliseconds >
+                      1000) {
                 if (_lastSpokenLetter != result.label) {
                   _flutterTts.speak(result.label);
                   _lastSpokenLetter = result.label;
@@ -259,7 +262,8 @@ class _DetectorScreenState extends State<DetectorScreen>
             } else {
               _currentTtsLetter = result.label;
               _letterStartTime = DateTime.now();
-              _lastSpokenLetter = null; // Reset to allow speaking the new letter after 1s
+              _lastSpokenLetter =
+                  null; // Reset to allow speaking the new letter after 1s
             }
           } else if (hands.isEmpty) {
             _confidenceHistory.clear();
@@ -277,9 +281,9 @@ class _DetectorScreenState extends State<DetectorScreen>
       _isProcessingFrame = false;
     }
   }
- 
+
   // ── Camera switching ───────────────────────────────────────────────────
- 
+
   Future<void> _switchCamera() async {
     if (_cameras.length < 2) return;
     _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras.length;
@@ -294,61 +298,42 @@ class _DetectorScreenState extends State<DetectorScreen>
     });
     await _startCamera();
   }
- 
+
   // ── Helpers ────────────────────────────────────────────────────────────
- 
+
   void _setError(String msg) {
     _errorMessage = msg;
     _setScreenState(_ScreenState.error);
   }
- 
+
   void _setScreenState(_ScreenState state) {
     if (mounted) setState(() => _screenState = state);
   }
- 
+
   bool get _isFrontCamera =>
       _cameras.isNotEmpty &&
-      _cameras[_selectedCameraIndex].lensDirection ==
-          CameraLensDirection.front;
-  // ── Orientation helpers ──────────────────────────────────────────────
-
-  /// Calculates how many 90° clockwise turns are needed so the camera
-  /// preview appears upright in portrait mode.
-  ///
-  /// Front camera: the platform mirrors horizontally, reversing the
-  /// effective rotation direction → rotate WITH sensorOrientation.
-  /// Back camera: no mirror → rotate AGAINST sensorOrientation.
-  int _previewQuarterTurns(int sensorOrientation) {
-    final turns = sensorOrientation ~/ 360;
-    // Front camera: the platform mirrors horizontally, so we compensate
-    // by rotating in the opposite direction to the sensor orientation.
-    // Back camera: no mirror → rotate WITH sensorOrientation.
-    if (_isFrontCamera) {
-      return (2 + turns) % 4;
-    }
-    return turns % 4;
-  }
-
+      _cameras[_selectedCameraIndex].lensDirection == CameraLensDirection.front;
   /// Builds the camera preview + landmark overlay inside a rotation-
   /// corrected, aspect-ratio-aware container that fills the available space.
   Widget _buildOrientedPreview(CameraController controller) {
-    final sensorOrientation = controller.description.sensorOrientation;
-    final quarterTurns = _previewQuarterTurns(sensorOrientation);
-    final previewSize = controller.value.previewSize!;
+    // Para evitar que la imagen se estire, usamos el aspect ratio nativo de la cámara.
+    // CameraPreview rota automáticamente la imagen a vertical en móviles.
+    final size = MediaQuery.of(context).size;
+    var cameraRatio = controller.value.aspectRatio;
+    // Si estamos en vertical, el ratio de la cámara (que suele ser apaisado) debe invertirse
+    if (size.width < size.height) {
+      cameraRatio = 1 / cameraRatio;
+    }
 
-    // previewSize from the camera is always in landscape (w > h).
-    // We keep the SizedBox in landscape to match the raw sensor frame,
-    // then RotatedBox rotates it to portrait.
     return ClipRect(
-      child: FittedBox(
-        fit: BoxFit.cover,
-        child: Transform.scale(
-          scaleX: _isFrontCamera ? 1 : -1,
-          child: RotatedBox(
-            quarterTurns: quarterTurns,
+      child: Transform.scale(
+        scaleX: _isFrontCamera ? 1 : -1,
+        child: SizedBox.expand(
+          child: FittedBox(
+            fit: BoxFit.cover,
             child: SizedBox(
-              width: previewSize.width,
-              height: previewSize.height,
+              width: 1000, // Ancho base arbitrario
+              height: 1000 / cameraRatio, // Alto exacto según la proporción
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -356,9 +341,8 @@ class _DetectorScreenState extends State<DetectorScreen>
                   CustomPaint(
                     painter: LandmarkPainter(
                       hands: _detectedHands,
-                      previewSize: previewSize,
+                      previewSize: controller.value.previewSize!,
                       isFrontCamera: _isFrontCamera,
-                      quarterTurns: quarterTurns,
                     ),
                   ),
                 ],
@@ -371,7 +355,7 @@ class _DetectorScreenState extends State<DetectorScreen>
   }
 
   // ── Build ──────────────────────────────────────────────────────────────
- 
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -388,18 +372,20 @@ class _DetectorScreenState extends State<DetectorScreen>
       ),
       body: switch (_screenState) {
         _ScreenState.loading => _buildLoading(),
-        _ScreenState.permissionDenied =>
-          _buildPermissionDenied(permanent: false),
-        _ScreenState.permissionPermanentlyDenied =>
-          _buildPermissionDenied(permanent: true),
+        _ScreenState.permissionDenied => _buildPermissionDenied(
+          permanent: false,
+        ),
+        _ScreenState.permissionPermanentlyDenied => _buildPermissionDenied(
+          permanent: true,
+        ),
         _ScreenState.error => _buildError(),
         _ScreenState.ready => _buildCamera(),
       },
     );
   }
- 
+
   // ── State screens ──────────────────────────────────────────────────────
- 
+
   Widget _buildLoading() {
     return const Center(
       child: Column(
@@ -412,7 +398,7 @@ class _DetectorScreenState extends State<DetectorScreen>
       ),
     );
   }
- 
+
   Widget _buildPermissionDenied({required bool permanent}) {
     final theme = Theme.of(context);
     return Center(
@@ -421,8 +407,11 @@ class _DetectorScreenState extends State<DetectorScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.camera_alt_outlined,
-                size: 72, color: theme.colorScheme.error),
+            Icon(
+              Icons.camera_alt_outlined,
+              size: 72,
+              color: theme.colorScheme.error,
+            ),
             const SizedBox(height: 24),
             Text(
               'Permiso de cámara requerido',
@@ -433,18 +422,19 @@ class _DetectorScreenState extends State<DetectorScreen>
             Text(
               permanent
                   ? 'El acceso a la cámara fue denegado permanentemente. '
-                    'Ve a Configuración > Aplicaciones > Detector LSC > '
-                    'Permisos y activa la cámara manualmente.'
+                      'Ve a Configuración > Aplicaciones > Detector LSC > '
+                      'Permisos y activa la cámara manualmente.'
                   : 'Esta app necesita acceso a la cámara para detectar señas. '
-                    'Toca el botón para solicitar el permiso nuevamente.',
+                      'Toca el botón para solicitar el permiso nuevamente.',
               style: theme.textTheme.bodyLarge,
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 32),
             FilledButton(
-              onPressed: permanent
-                  ? CameraPermissionService.openSettings
-                  : _initialize,
+              onPressed:
+                  permanent
+                      ? CameraPermissionService.openSettings
+                      : _initialize,
               child: Text(
                 permanent ? 'Abrir configuración' : 'Solicitar permiso',
               ),
@@ -454,7 +444,7 @@ class _DetectorScreenState extends State<DetectorScreen>
       ),
     );
   }
- 
+
   Widget _buildError() {
     final theme = Theme.of(context);
     return Center(
@@ -463,11 +453,9 @@ class _DetectorScreenState extends State<DetectorScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline,
-                size: 72, color: theme.colorScheme.error),
+            Icon(Icons.error_outline, size: 72, color: theme.colorScheme.error),
             const SizedBox(height: 24),
-            Text('Ocurrió un error',
-                style: theme.textTheme.headlineSmall),
+            Text('Ocurrió un error', style: theme.textTheme.headlineSmall),
             const SizedBox(height: 12),
             Text(
               _errorMessage,
@@ -487,22 +475,22 @@ class _DetectorScreenState extends State<DetectorScreen>
       ),
     );
   }
- 
+
   Widget _buildCamera() {
     final controller = _cameraController;
     if (controller == null || !controller.value.isInitialized) {
       return _buildLoading();
     }
- 
+
     final theme = Theme.of(context);
     final handDetected = _detectedHands.isNotEmpty;
- 
+
     return Stack(
       fit: StackFit.expand,
       children: [
         // ── Camera preview + landmarks with orientation correction ─────
         _buildOrientedPreview(controller),
- 
+
         // ── Status chip (top center) ────────────────────────────────────
         Positioned(
           top: 16,
@@ -514,31 +502,32 @@ class _DetectorScreenState extends State<DetectorScreen>
               child: Chip(
                 key: ValueKey(handDetected),
                 avatar: Icon(
-                  handDetected
-                      ? Icons.sign_language
-                      : Icons.pan_tool_outlined,
+                  handDetected ? Icons.sign_language : Icons.pan_tool_outlined,
                   size: 18,
-                  color: handDetected
-                      ? theme.colorScheme.onPrimaryContainer
-                      : theme.colorScheme.onSurfaceVariant,
+                  color:
+                      handDetected
+                          ? theme.colorScheme.onPrimaryContainer
+                          : theme.colorScheme.onSurfaceVariant,
                 ),
                 label: Text(
                   handDetected ? 'Mano detectada' : 'Sin mano',
                   style: TextStyle(
-                    color: handDetected
-                        ? theme.colorScheme.onPrimaryContainer
-                        : theme.colorScheme.onSurfaceVariant,
+                    color:
+                        handDetected
+                            ? theme.colorScheme.onPrimaryContainer
+                            : theme.colorScheme.onSurfaceVariant,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
-                backgroundColor: handDetected
-                    ? theme.colorScheme.primaryContainer
-                    : theme.colorScheme.surfaceContainerHigh,
+                backgroundColor:
+                    handDetected
+                        ? theme.colorScheme.primaryContainer
+                        : theme.colorScheme.surfaceContainerHigh,
               ),
             ),
           ),
         ),
- 
+
         // ── Result Panel ─────────────────────────────────────────────────
         Positioned(
           bottom: 24,

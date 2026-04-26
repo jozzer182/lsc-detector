@@ -8,10 +8,6 @@ class LandmarkPainter extends CustomPainter {
   final List<Hand> hands;
   final Size previewSize;
   final bool isFrontCamera;
-  /// The number of clockwise quarter turns applied by RotatedBox.
-  /// Must match the value used to rotate the CameraPreview so that
-  /// the landmark coordinates align with the rotated image.
-  final int quarterTurns;
  
   // MediaPipe hand skeleton connections (pairs of landmark indices)
   static const List<List<int>> _connections = [
@@ -27,17 +23,21 @@ class LandmarkPainter extends CustomPainter {
     required this.hands,
     required this.previewSize,
     this.isFrontCamera = true,
-    this.quarterTurns = 0,
   });
  
   @override
   void paint(Canvas canvas, Size size) {
     if (hands.isEmpty) return;
  
+    // Calcular un factor de escala dinámico basado en la resolución.
+    // Asumimos 480 como resolución base (para la que se diseñó originalmente).
+    final double minDim = size.width < size.height ? size.width : size.height;
+    final double scale = minDim / 480.0;
+
     final linePaint = Paint()
       // ignore: deprecated_member_use
       ..color = Colors.greenAccent.withOpacity(0.8)
-      ..strokeWidth = 2.0
+      ..strokeWidth = 2.0 * scale
       ..strokeCap = StrokeCap.round;
  
     final dotPaint = Paint()
@@ -47,45 +47,36 @@ class LandmarkPainter extends CustomPainter {
     final dotOutlinePaint = Paint()
       ..color = Colors.greenAccent
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
+      ..strokeWidth = 1.5 * scale;
+      
+    final double dotRadius = 5.0 * scale;
  
     for (final hand in hands) {
       final lms = hand.landmarks;
       if (lms.isEmpty) continue;
  
-      // Map normalized [0,1] landmark coordinates to canvas pixel
-      // coordinates, accounting for the RotatedBox rotation.
-      //
-      // MediaPipe returns landmarks in portrait-corrected space
-      // (because we pass sensorOrientation to detect()). But the
-      // canvas is pre-rotation (landscape). We need to transform the
-      // portrait coords into the landscape canvas so that after
-      // RotatedBox rotates everything, landmarks match the preview.
+      // CameraPreview automatically rotates the camera texture to portrait mode,
+      // but MediaPipe receives the raw landscape image from the sensor.
+      // Therefore, we must map the raw landscape coordinates (nx, ny) to our 
+      // upright portrait canvas.
       Offset toScreen(Landmark lm) {
-        var nx = lm.x;
-        var ny = lm.y;
+        double nx = lm.x;
+        double ny = lm.y;
 
-        // Front camera: mirror x to match the platform's horizontal flip.
+        double finalX;
+        double finalY;
+
         if (isFrontCamera) {
-          nx = 1.0 - nx;
+          // Mapping for mirrored front camera upright portrait
+          finalX = 1.0 - ny;
+          finalY = 1.0 - nx;
+        } else {
+          // Mapping for unmirrored back camera upright portrait
+          finalX = 1.0 - ny;
+          finalY = nx;
         }
 
-        // Transform from portrait-corrected space to pre-rotation
-        // landscape canvas space.
-        final w = size.width;
-        final h = size.height;
-        switch ((quarterTurns-1) % 4) {
-          case 0:
-            return Offset(nx * w, ny * h);
-          case 1: // 90° CW: inverse is 90° CCW
-            return Offset(ny * w, (1.0 - nx) * h);
-          case 2: // 180°: inverse is 180°
-            return Offset((1.0 - nx) * w, (1.0 - ny) * h);
-          case 3: // 270° CW: inverse is 90° CW
-            return Offset((1.0 - ny) * w, nx * h);
-          default:
-            return Offset(nx * w, ny * h);
-        }
+        return Offset(finalX * size.width, finalY * size.height);
       }
  
       // Draw connections first (under the dots)
@@ -102,14 +93,13 @@ class LandmarkPainter extends CustomPainter {
       // Draw landmark dots on top
       for (final lm in lms) {
         final pos = toScreen(lm);
-        canvas.drawCircle(pos, 5, dotPaint);
-        canvas.drawCircle(pos, 5, dotOutlinePaint);
+        canvas.drawCircle(pos, dotRadius, dotPaint);
+        canvas.drawCircle(pos, dotRadius, dotOutlinePaint);
       }
     }
   }
  
   @override
   bool shouldRepaint(LandmarkPainter oldDelegate) =>
-      oldDelegate.hands != hands ||
-      oldDelegate.quarterTurns != oldDelegate.quarterTurns;
+      oldDelegate.hands != hands;
 }
