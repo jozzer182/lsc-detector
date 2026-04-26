@@ -1,0 +1,38 @@
+name: flutter_app
+description: Detector de señas LSC — MVP
+ 
+publish_to: 'none'
+version: 1.0.0+1
+ 
+environment:
+  sdk: ^3.7.0
+  flutter: '>=3.27.0'
+ 
+dependencies:
+  flutter:
+    sdk: flutter
+ 
+  # Camera
+  camera: ^0.11.0+2
+ 
+  # MediaPipe hand landmark detection (Android, bundles the .task model automatically)
+  hand_landmarker: ^2.1.2
+ 
+  # TFLite inference for the custom classifier
+  tflite_flutter: ^0.12.1
+ 
+  # Permissions
+  permission_handler: ^11.3.1
+ 
+  # Utilities
+  flutter_animate: ^4.5.0
+ 
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+ 
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/models/

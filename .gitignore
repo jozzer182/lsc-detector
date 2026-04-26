@@ -1,0 +1,63 @@
+# ================================================================
+# LSC Detector — Monorepo .gitignore
+# Covers: Flutter (Android), Python (ML), Windows, IDE
+# ================================================================
+
+# ── Flutter / Dart ───────────────────────────────────────────────
+flutter/.dart_tool/
+flutter/.flutter-plugins
+flutter/.flutter-plugins-dependencies
+flutter/.packages
+flutter/build/
+flutter/android/.gradle/
+flutter/android/local.properties
+flutter/android/key.properties
+flutter/ios/.symlinks/
+flutter/ios/Pods/
+flutter/ios/Runner.xcworkspace/xcuserdata/
+flutter/linux/flutter/ephemeral/
+flutter/macos/Flutter/ephemeral/
+flutter/macos/Pods/
+flutter/windows/flutter/ephemeral/
+flutter/lib/generated_plugin_registrant.dart
+
+# Release artifacts — never commit binaries to source control
+*.apk
+*.ipa
+*.aab
+
+# ── Firebase credentials ─────────────────────────────────────────
+flutter/android/app/google-services.json
+flutter/ios/Runner/GoogleService-Info.plist
+# If firebase_options.dart has real keys, uncomment this line:
+# flutter/lib/firebase_options.dart
+
+# ── Python / ML ──────────────────────────────────────────────────
+python/__pycache__/
+python/*.pyc
+python/*.pyo
+python/venv/
+python/.venv/
+python/env/
+python/*.egg-info/
+python/dist/
+
+# ── IDE ──────────────────────────────────────────────────────────
+.idea/
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+*.suo
+*.user
+.vs/
+
+# ── OS ───────────────────────────────────────────────────────────
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# ── Secrets ──────────────────────────────────────────────────────
+.env
+.env.local
+*.env
+*_secrets.*
