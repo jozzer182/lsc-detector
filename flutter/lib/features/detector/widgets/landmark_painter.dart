@@ -74,7 +74,7 @@ class LandmarkPainter extends CustomPainter {
         // landscape canvas space.
         final w = size.width;
         final h = size.height;
-        switch (quarterTurns % 4) {
+        switch ((quarterTurns-1) % 4) {
           case 0:
             return Offset(nx * w, ny * h);
           case 1: // 90° CW: inverse is 90° CCW
