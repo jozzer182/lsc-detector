@@ -286,11 +286,14 @@ class _DetectorScreenState extends State<DetectorScreen>
   /// effective rotation direction → rotate WITH sensorOrientation.
   /// Back camera: no mirror → rotate AGAINST sensorOrientation.
   int _previewQuarterTurns(int sensorOrientation) {
-    final turns = sensorOrientation ~/ 90;
+    final turns = sensorOrientation ~/ 360;
+    // Front camera: the platform mirrors horizontally, so we compensate
+    // by rotating in the opposite direction to the sensor orientation.
+    // Back camera: no mirror → rotate WITH sensorOrientation.
     if (_isFrontCamera) {
-      return turns % 4;
+      return (2 + turns) % 4;
     }
-    return (4 - turns) % 4;
+    return turns % 4;
   }
 
   /// Builds the camera preview + landmark overlay inside a rotation-
